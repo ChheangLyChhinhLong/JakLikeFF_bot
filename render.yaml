@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: telegram-digital-shop
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.main
+    numInstances: 1
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ADMIN_IDS
+        sync: false
+      - key: ADMIN_GROUP_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: KHPAY_API_KEY
+        sync: false
+      - key: KHPAY_BASE_URL
+        value: https://khpay.site/api/v1
+      - key: KHPAY_WEBHOOK_SECRET
+        sync: false
+      - key: KHPAY_WEBHOOK_URL
+        sync: false
+      - key: RESELLER_API_URL
+        value: https://mean-like.com/autolikeff
+      - key: RESELLER_SELLER_ID
+        value: "8916235907"
+      - key: RESELLER_API_KEY
+        sync: false
+      - key: RESELLER_DAILY_BATCH_LIKES
+        value: "220"
+      - key: PORT
+        value: "10000"
+      - key: SUPPORT_USERNAME
+        sync: false
+      - key: POLL_INTERVAL_SECONDS
+        value: "20"
