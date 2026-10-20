@@ -56,6 +56,7 @@ admin_state: dict[int, str] = {}
 pending_price_packages: dict[int, int] = {}
 broadcast_jobs: set[asyncio.Task[None]] = set()
 DAILY_BATCH_FALLBACK = 220
+AUTOLIKE_TUTORIAL_VIDEO_SETTING = "autolike_tutorial_video_url"
 
 
 def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
@@ -64,6 +65,14 @@ def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
 
 def back_to_menu() -> list[InlineKeyboardButton]:
     return [InlineKeyboardButton(text="🔙 ត្រឡប់ទៅមេនុយ", callback_data="home")]
+
+
+def guide_keyboard(video_url: str | None) -> InlineKeyboardMarkup:
+    rows = []
+    if video_url:
+        rows.append([InlineKeyboardButton(text="▶️ មើលវីដេអូរបៀបទិញ", url=video_url)])
+    rows.append(back_to_menu())
+    return keyboard(rows)
 
 
 def menu(is_admin: bool = False) -> InlineKeyboardMarkup:
@@ -696,13 +705,22 @@ def register_handlers(
     @router.callback_query(F.data == "guide")
     async def guide(callback: CallbackQuery) -> None:
         await callback.answer()
+        video_url = await store.bot_setting(AUTOLIKE_TUTORIAL_VIDEO_SETTING)
+        video_message = (
+            ""
+            if video_url
+            else "\n\nវីដេអូណែនាំមិនទាន់មានទេ។"
+        )
+        if not video_url:
+            logger.warning("Supabase setting %s is not configured", AUTOLIKE_TUTORIAL_VIDEO_SETTING)
         await callback.message.answer(
             "🎥 <b>របៀបទិញ AutoLike</b>\n"
             "1. ចុចប៊ូតុងទិញ ហើយបញ្ចូល UID Free Fire។\n"
             "2. ជ្រើសរើសចំនួន Likes និងស្កេន KHQR ក្នុងរយៈពេល 15 នាទី។\n"
-            "3. ប្រព័ន្ធនឹងបញ្ចូលរហូតដល់ 220 Likes ក្នុងមួយថ្ងៃ។",
+            "3. ប្រព័ន្ធនឹងបញ្ចូលរហូតដល់ 220 Likes ក្នុងមួយថ្ងៃ."
+            f"{video_message}",
             parse_mode="HTML",
-            reply_markup=keyboard([back_to_menu()]),
+            reply_markup=guide_keyboard(video_url),
         )
 
     @router.callback_query(F.data == "help")

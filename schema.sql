@@ -73,6 +73,9 @@ create table public.bot_settings (
     value text not null
 );
 
+insert into public.bot_settings (key, value)
+values ('autolike_tutorial_video_url', 'https://t.me/LongStores_kh/134');
+
 create index orders_pending_created_idx
     on public.orders (created_at) where status = 'pending';
 create index orders_active_delivery_idx

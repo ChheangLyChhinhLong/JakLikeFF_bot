@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from app.bot import (
     PACKAGES,
     _broadcast_to_active_users,
+    guide_keyboard,
     _progress_bar,
     _progress_text,
     menu,
@@ -48,6 +49,14 @@ def test_welcome_escapes_user_supplied_html_and_shows_id_and_name():
     assert "@ff_user" in text
     assert all(button.callback_data for row in menu().inline_keyboard for button in row)
     assert all("/" not in button.callback_data for row in menu().inline_keyboard for button in row)
+
+
+def test_guide_keyboard_links_to_the_configured_video_and_keeps_menu_navigation():
+    markup = guide_keyboard("https://t.me/LongStores_kh/134")
+
+    assert markup.inline_keyboard[0][0].url == "https://t.me/LongStores_kh/134"
+    assert markup.inline_keyboard[1][0].callback_data == "home"
+    assert len(guide_keyboard(None).inline_keyboard) == 1
 
 
 def test_payment_screen_has_the_exact_two_inline_actions():

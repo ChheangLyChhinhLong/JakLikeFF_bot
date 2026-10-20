@@ -13,6 +13,17 @@ class Store:
     def __init__(self, client: AsyncClient) -> None:
         self.client = client
 
+    async def bot_setting(self, key: str) -> str | None:
+        result = await (
+            self.client.table("bot_settings")
+            .select("value")
+            .eq("key", key)
+            .maybe_single()
+            .execute()
+        )
+        row = _record(result.data)
+        return str(row["value"]) if row else None
+
     async def upsert_user(self, telegram_id: int, username: str | None, first_name: str) -> None:
         await self.client.table("users").upsert(
             {
