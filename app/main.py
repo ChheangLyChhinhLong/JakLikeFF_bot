@@ -110,13 +110,14 @@ async def khpay_webhook(request: Request) -> dict[str, bool | str]:
         event_data = payload
     event_status = {
         "payment.paid": "paid",
-        "payment.expired": "failed",
+        "payment.expired": "expired",
         "payment.failed": "failed",
     }.get(payload.get("event"))
     status_value = event_status or event_data.get("status") or payload.get("status")
     status = str(status_value).lower()
     if status not in {"paid", "expired", "failed"}:
         return {"received": True, "status": "ignored"}
+    expired = status == "expired"
     if status == "expired":
         status = "failed"
     transaction_id = event_data.get("transaction_id") or payload.get("transaction_id")
@@ -160,13 +161,18 @@ async def khpay_webhook(request: Request) -> dict[str, bool | str]:
             raise HTTPException(status_code=503, detail="Payment confirmed; delivery will be retried") from None
         return {"received": True, "status": "paid"}
 
+    await delete_payment_qr(bot, store, order)
     if not await store.close_pending_order(int(order["id"]), status):
         return {"received": True, "status": "order_already_closed"}
-    await delete_payment_qr(bot, store, order)
+    notification = (
+        "⌛ ការទូទាត់ផុតកំណត់ហើយ។ សូមបង្កើតការបញ្ជាទិញថ្មី។"
+        if expired
+        else "⌛ ការទូទាត់មិនបានបញ្ចប់។ សូមបង្កើតការបញ្ជាទិញថ្មី។"
+    )
     try:
         await bot.send_message(
             int(order["telegram_id"]),
-            "⌛ ការទូទាត់មិនបានបញ្ចប់។ សូមបង្កើតការបញ្ជាទិញថ្មី។",
+            notification,
         )
     except TelegramAPIError:
         logger.exception("Could not notify user of failed payment for order %s", order["id"])

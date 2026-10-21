@@ -97,15 +97,32 @@ as $$
 begin
     return query
     with candidate as (
-        select id
-        from public.orders
-        where status = 'active'
-          and sent_likes < total_likes
-          and last_run_date is distinct from current_date
-          and (delivery_claimed_at is null or delivery_claimed_at < now() - interval '10 minutes')
-          and (p_order_id is null or id = p_order_id)
-        order by created_at
-        for update skip locked
+        select current_order.id
+        from public.orders as current_order
+        where current_order.status = 'active'
+          and current_order.sent_likes < current_order.total_likes
+          and current_order.last_run_date is distinct from current_date
+          and (
+              current_order.delivery_claimed_at is null
+              or current_order.delivery_claimed_at < now() - interval '10 minutes'
+          )
+          and (p_order_id is null or current_order.id = p_order_id)
+          and not exists (
+              select 1
+              from public.orders as earlier_order
+              where earlier_order.ff_uid = current_order.ff_uid
+                and (earlier_order.created_at, earlier_order.id)
+                    < (current_order.created_at, current_order.id)
+                and (
+                    (
+                        earlier_order.status = 'active'
+                        and earlier_order.sent_likes < earlier_order.total_likes
+                    )
+                    or earlier_order.last_run_date = current_date
+                )
+          )
+        order by current_order.created_at, current_order.id
+        for update of current_order skip locked
         limit 1
     )
     update public.orders as target

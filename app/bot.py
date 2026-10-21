@@ -265,11 +265,14 @@ async def delete_payment_qr(bot: Bot, store: Store, order: dict[str, Any]) -> No
     telegram_id = int(order["telegram_id"])
     try:
         await bot.delete_message(chat_id=telegram_id, message_id=int(message_id))
-    except TelegramBadRequest:
+    except TelegramBadRequest as exc:
+        if "message to delete not found" not in str(exc).lower():
+            logger.exception("Could not delete payment QR message for order %s", order["id"])
+            raise
         logger.info("Payment QR message %s for order %s was already unavailable", message_id, order["id"])
     except TelegramAPIError:
         logger.exception("Could not delete payment QR message for order %s", order["id"])
-        return
+        raise
     await store.clear_payment_message(int(order["id"]))
 
 
@@ -365,13 +368,41 @@ async def process_paid_order(
         await store.activate_order(order_id)
         order = await store.order(order_id)
     if order and order["status"] == "active":
-        await process_daily_delivery(bot, store, reseller, settings, order_id)
+        delivered = await process_daily_delivery(bot, store, reseller, settings, order_id)
+        if not delivered and int(order["sent_likes"]) == 0:
+            await _notify_queued_order(bot, settings, order)
+
+
+async def _notify_queued_order(
+    bot: Bot,
+    settings: Settings,
+    order: dict[str, Any],
+) -> None:
+    text = (
+        "✅ <b>ការទូទាត់បានជោគជ័យ!</b>\n"
+        f"🆔 UID: <code>{html.escape(str(order['ff_uid']))}</code>\n"
+        "📋 ការបញ្ជាទិញរបស់អ្នកត្រូវបានដាក់ក្នុងជួរ។ "
+        "ប្រព័ន្ធនឹងចាប់ផ្តើមបន្ទាប់ពីការបញ្ជាទិញមុនសម្រាប់ UID នេះបានបញ្ចប់។"
+    )
+    recipients = [int(order["telegram_id"])]
+    admin_chat_id = settings.admin_chat_id
+    if admin_chat_id is not None and admin_chat_id not in recipients:
+        recipients.append(admin_chat_id)
+    for chat_id in recipients:
+        try:
+            await bot.send_message(chat_id, text, parse_mode="HTML")
+        except TelegramAPIError:
+            logger.exception(
+                "Could not send queued order notification for order %s to chat %s",
+                order["id"],
+                chat_id,
+            )
 
 
 async def _expire_order(bot: Bot, store: Store, order: dict[str, Any]) -> None:
+    await delete_payment_qr(bot, store, order)
     if not await store.close_pending_order(int(order["id"]), "failed"):
         return
-    await delete_payment_qr(bot, store, order)
     try:
         await bot.send_message(
             int(order["telegram_id"]),

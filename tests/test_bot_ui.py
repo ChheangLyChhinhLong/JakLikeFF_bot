@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from app.bot import (
     PACKAGES,
     _broadcast_to_active_users,
+    _expire_order,
     guide_keyboard,
     _progress_bar,
     _progress_text,
@@ -13,6 +14,7 @@ from app.bot import (
     package_keyboard,
     payment_caption,
     payment_keyboard,
+    process_paid_order,
     process_daily_delivery,
     welcome_text,
 )
@@ -87,6 +89,101 @@ def test_payment_proxy_button_encodes_transaction_id():
     assert markup.inline_keyboard[0][0].url == (
         "https://jaklikeff-bot.onrender.com/pay/txn%2F456"
     )
+
+
+def test_expiration_deletes_and_clears_qr_before_closing_and_notifying():
+    async def run_test():
+        events = []
+
+        store = SimpleNamespace(
+            clear_payment_message=AsyncMock(side_effect=lambda _: events.append("clear")),
+            close_pending_order=AsyncMock(
+                side_effect=lambda *_: (events.append("close"), True)[1]
+            ),
+        )
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(side_effect=lambda **_: events.append("delete")),
+            send_message=AsyncMock(side_effect=lambda *_: events.append("notify")),
+        )
+        order = {"id": 11, "telegram_id": 123, "message_id": 456}
+
+        await _expire_order(bot, store, order)
+
+        assert events == ["delete", "clear", "close", "notify"]
+        bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
+
+    asyncio.run(run_test())
+
+
+def test_expiration_does_not_close_or_notify_if_qr_deletion_fails():
+    async def run_test():
+        store = SimpleNamespace(
+            clear_payment_message=AsyncMock(),
+            close_pending_order=AsyncMock(),
+        )
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(side_effect=RuntimeError("Telegram unavailable")),
+            send_message=AsyncMock(),
+        )
+
+        try:
+            await _expire_order(
+                bot,
+                store,
+                {"id": 12, "telegram_id": 123, "message_id": 456},
+            )
+        except RuntimeError as exc:
+            assert str(exc) == "Telegram unavailable"
+        else:
+            raise AssertionError("Expected QR deletion failure to propagate")
+
+        store.close_pending_order.assert_not_awaited()
+        bot.send_message.assert_not_awaited()
+
+    asyncio.run(run_test())
+
+
+def test_paid_order_deletes_qr_before_activation_and_delivery_notifications():
+    async def run_test():
+        events = []
+        pending_order = {
+            "id": 13,
+            "telegram_id": 123,
+            "message_id": 456,
+            "ff_uid": "123456",
+            "sent_likes": 0,
+            "status": "pending",
+        }
+        active_order = {**pending_order, "status": "active"}
+        store = SimpleNamespace(
+            order=AsyncMock(side_effect=[pending_order, active_order]),
+            clear_payment_message=AsyncMock(side_effect=lambda _: events.append("clear")),
+            activate_order=AsyncMock(side_effect=lambda _: events.append("activate") or True),
+            claim_due_order=AsyncMock(return_value=None),
+        )
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(side_effect=lambda **_: events.append("delete")),
+            send_message=AsyncMock(side_effect=lambda chat_id, *_args, **_kwargs: events.append(f"notify:{chat_id}")),
+        )
+
+        await process_paid_order(
+            bot,
+            store,
+            SimpleNamespace(),
+            SimpleNamespace(admin_chat_id=-100123),
+            13,
+        )
+
+        assert events == [
+            "delete",
+            "clear",
+            "activate",
+            "notify:123",
+            "notify:-100123",
+        ]
+        bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
+
+    asyncio.run(run_test())
 
 
 def test_progress_message_shows_partial_and_completed_order_states():

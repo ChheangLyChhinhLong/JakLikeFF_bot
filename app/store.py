@@ -118,7 +118,7 @@ class Store:
     async def pending_orders(self) -> list[dict[str, Any]]:
         result = await (
             self.client.table("orders")
-            .select("id,transaction_id,telegram_id,amount,status,created_at")
+            .select("id,transaction_id,telegram_id,amount,status,message_id,created_at")
             .eq("status", "pending")
             .not_.is_("transaction_id", "null")
             .order("created_at")

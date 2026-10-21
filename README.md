@@ -18,6 +18,7 @@ The service runs Telegram long polling, payment reconciliation, and a daily deli
 - The “របៀបទិញ” guide reads `autolike_tutorial_video_url` from `bot_settings`. For an existing Supabase project, run [`migrations/20261021_add_autolike_tutorial_video.sql`](./migrations/20261021_add_autolike_tutorial_video.sql) once to set the supplied tutorial video link.
 - Admins can broadcast text, photos, or videos to active users and view aggregate user/order/revenue statistics.
 - `ADMIN_GROUP_ID` receives progress reports for each daily delivery batch, including the visual progress bar.
+- Paid orders for the same Free Fire UID are delivered FIFO. The next order waits until the earlier order completes, and only one order per UID is delivered per day. Existing Supabase projects must run [`migrations/20261021_queue_same_uid_orders.sql`](./migrations/20261021_queue_same_uid_orders.sql) to install this queue behavior.
 - Customers can see the same progress bar and their delivery history from the inline menu.
 - All bot interaction is through inline buttons and message/state handlers; no slash commands are registered.
 - Keep the Supabase service-role key private. Do not expose it to clients.
