@@ -285,6 +285,7 @@ def _progress_text(order: dict[str, Any], delivered_today: int, sent_likes: int,
         else ""
     )
     return (
+        "✅ <b>ការទូទាត់បានជោគជ័យ!</b>\n"
         "<code>💎 AutoLikeFF Daily Update</code>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"{order_line}"
@@ -444,6 +445,17 @@ async def _expire_order(bot: Bot, store: Store, order: dict[str, Any]) -> None:
         logger.exception("Could not notify user of expired order %s", order["id"])
 
 
+async def cleanup_settled_payment_qrs(bot: Bot, store: Store) -> None:
+    for order in await store.settled_orders_with_payment_messages():
+        try:
+            await delete_payment_qr(bot, store, order)
+        except Exception:
+            logger.exception(
+                "Could not retry payment QR cleanup for settled order %s",
+                order["id"],
+            )
+
+
 async def reconcile_payments(
     bot: Bot,
     store: Store,
@@ -453,6 +465,7 @@ async def reconcile_payments(
 ) -> None:
     while True:
         try:
+            await cleanup_settled_payment_qrs(bot, store)
             now = datetime.now(timezone.utc)
             for order in await store.pending_orders():
                 created_at = datetime.fromisoformat(str(order["created_at"]).replace("Z", "+00:00"))
@@ -706,14 +719,15 @@ def register_handlers(
             )
             status = await store.set_payment_message(int(order["id"]), sent_message.message_id)
             if status and status != "pending":
-                try:
-                    await bot.delete_message(
-                        chat_id=callback.from_user.id,
-                        message_id=sent_message.message_id,
-                    )
-                except TelegramAPIError:
-                    logger.exception("Could not delete late payment QR for order %s", order["id"])
-                await store.clear_payment_message(int(order["id"]))
+                await delete_payment_qr(
+                    bot,
+                    store,
+                    {
+                        "id": int(order["id"]),
+                        "telegram_id": callback.from_user.id,
+                        "message_id": sent_message.message_id,
+                    },
+                )
         except Exception:
             await store.close_pending_order(int(order["id"]), "failed")
             logger.exception("Could not create the KHPAY payment for order %s", order["id"])

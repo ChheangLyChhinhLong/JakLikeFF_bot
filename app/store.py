@@ -127,6 +127,17 @@ class Store:
         )
         return result.data or []
 
+    async def settled_orders_with_payment_messages(self) -> list[dict[str, Any]]:
+        result = await (
+            self.client.table("orders")
+            .select("id,telegram_id,message_id")
+            .in_("status", ["paid", "active", "completed", "failed"])
+            .not_.is_("message_id", "null")
+            .limit(100)
+            .execute()
+        )
+        return result.data or []
+
     async def order_history(self, telegram_id: int) -> list[dict[str, Any]]:
         result = await (
             self.client.table("orders")

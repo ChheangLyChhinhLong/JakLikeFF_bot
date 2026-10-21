@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from app.bot import (
     PACKAGES,
     _broadcast_to_active_users,
+    cleanup_settled_payment_qrs,
     _expire_order,
     guide_keyboard,
     _progress_bar,
@@ -193,11 +194,33 @@ def test_progress_message_shows_partial_and_completed_order_states():
     complete = _progress_text(order, 120, 1_000, True)
 
     assert "Likes Added Today:</b> +220" in partial
+    assert "ការទូទាត់បានជោគជ័យ" in partial
     assert "440/1,000" in partial
     assert "In Progress (44%)" in partial
     assert "[████░░░░░░] 440/1,000 (44%)" in partial
     assert "Completed" in complete
     assert "1,000/1,000" in complete
+
+
+def test_settled_payment_qr_cleanup_retries_and_clears_message_id():
+    async def run_test():
+        events = []
+        order = {"id": 15, "telegram_id": 123, "message_id": 456}
+        store = SimpleNamespace(
+            settled_orders_with_payment_messages=AsyncMock(return_value=[order]),
+            clear_payment_message=AsyncMock(side_effect=lambda _: events.append("clear")),
+        )
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(side_effect=lambda **_: events.append("delete")),
+        )
+
+        await cleanup_settled_payment_qrs(bot, store)
+
+        assert events == ["delete", "clear"]
+        bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
+        store.settled_orders_with_payment_messages.assert_awaited_once_with()
+
+    asyncio.run(run_test())
 
 
 def test_progress_bar_uses_ten_blocks_and_clamps_values():
