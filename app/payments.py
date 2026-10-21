@@ -46,7 +46,7 @@ class KHPayClient:
             body["callback_url"] = self._webhook_url
         response = await self._client.post(
             "/qr/generate",
-            headers={"Idempotency-Key": order_id},
+            headers={"Idempotency-Key": f"jaklikeff-order-{order_id}"},
             json=body,
         )
         try:
@@ -59,7 +59,12 @@ class KHPayClient:
             error = payload.get("error") or payload.get("message") or f"HTTP {response.status_code}"
             error_code = payload.get("error_code")
             request_id = payload.get("request_id")
-            context = ", ".join(value for value in (error_code, f"request_id={request_id}" if request_id else None) if value)
+            context_parts = [f"HTTP {response.status_code}"]
+            if error_code is not None:
+                context_parts.append(str(error_code))
+            if request_id:
+                context_parts.append(f"request_id={request_id}")
+            context = ", ".join(context_parts)
             raise RuntimeError(f"KHPAY error: {error}" + (f" ({context})" if context else ""))
         data = payload.get("data", {})
         if not isinstance(data, dict):

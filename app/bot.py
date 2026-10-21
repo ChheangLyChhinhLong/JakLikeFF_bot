@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from urllib.parse import quote
 
 import qrcode
 from aiogram import Bot, Dispatcher, F, Router
@@ -57,7 +56,6 @@ admin_state: dict[int, str] = {}
 pending_price_packages: dict[int, int] = {}
 broadcast_jobs: set[asyncio.Task[None]] = set()
 AUTOLIKE_TUTORIAL_VIDEO_SETTING = "autolike_tutorial_video_url"
-PAYMENT_PROXY_BASE_URL = "https://jaklikeff-bot.onrender.com/pay"
 
 
 def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
@@ -160,17 +158,15 @@ def payment_caption(order: dict[str, Any], transaction_id: str) -> str:
     )
 
 
-def payment_keyboard(order_id: int, transaction_id: str) -> InlineKeyboardMarkup:
-    payment_url = f"{PAYMENT_PROXY_BASE_URL}/{quote(transaction_id, safe='')}"
+def payment_keyboard(order_id: int) -> InlineKeyboardMarkup:
     return keyboard(
         [
-            [InlineKeyboardButton(text="🌐 បើកទំព័រទូទាត់", url=payment_url)],
             [
                 InlineKeyboardButton(
                     text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ",
                     callback_data=f"check:{order_id}",
                 )
-            ],
+            ]
         ]
     )
 
@@ -715,7 +711,7 @@ def register_handlers(
                 _make_qr(str(payment["qr_string"])),
                 caption=payment_caption(order, transaction_id),
                 parse_mode="HTML",
-                reply_markup=payment_keyboard(int(order["id"]), transaction_id),
+                reply_markup=payment_keyboard(int(order["id"])),
             )
             status = await store.set_payment_message(int(order["id"]), sent_message.message_id)
             if status and status != "pending":

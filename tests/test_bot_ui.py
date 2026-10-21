@@ -61,10 +61,10 @@ def test_guide_keyboard_links_to_the_configured_video_and_keeps_menu_navigation(
     assert len(guide_keyboard(None).inline_keyboard) == 1
 
 
-def test_payment_screen_uses_render_proxy_and_keeps_payment_check():
+def test_payment_screen_only_shows_payment_check_button():
     order = {"ff_uid": "123456", "total_likes": 1_000, "amount": "0.50"}
     caption = payment_caption(order, "txn-456")
-    markup = payment_keyboard(11, "txn-456")
+    markup = payment_keyboard(11)
 
     assert caption == (
         "💳 <b>Pay $0.50</b>\n\n"
@@ -76,20 +76,12 @@ def test_payment_screen_uses_render_proxy_and_keeps_payment_check():
         "⏱ <b>Scan KHQR to complete payment.</b>\n"
         "⏰ <b>You have 4 minutes to pay. The QR refreshes itself.</b>"
     )
-    assert len(markup.inline_keyboard) == 2
-    assert markup.inline_keyboard[0][0].url == (
-        "https://jaklikeff-bot.onrender.com/pay/txn-456"
-    )
-    assert "khpay.site" not in markup.inline_keyboard[0][0].url
-    assert markup.inline_keyboard[1][0].callback_data == "check:11"
-
-
-def test_payment_proxy_button_encodes_transaction_id():
-    markup = payment_keyboard(11, "txn/456")
-
-    assert markup.inline_keyboard[0][0].url == (
-        "https://jaklikeff-bot.onrender.com/pay/txn%2F456"
-    )
+    assert len(markup.inline_keyboard) == 1
+    assert len(markup.inline_keyboard[0]) == 1
+    button = markup.inline_keyboard[0][0]
+    assert button.text == "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ"
+    assert button.callback_data == "check:11"
+    assert button.url is None
 
 
 def test_expiration_deletes_and_clears_qr_before_closing_and_notifying():
