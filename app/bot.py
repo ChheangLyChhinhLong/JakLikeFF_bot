@@ -64,7 +64,7 @@ def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
 
 
 def back_to_menu() -> list[InlineKeyboardButton]:
-    return [InlineKeyboardButton(text="🔙 ត្រឡប់ទៅមេនុយ", callback_data="home")]
+    return [InlineKeyboardButton(text="🔙 ត្រឡប់ទៅម៉ឺនុយ", callback_data="home")]
 
 
 def guide_keyboard(video_url: str | None) -> InlineKeyboardMarkup:
