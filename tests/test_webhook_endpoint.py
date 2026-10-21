@@ -46,3 +46,17 @@ def test_paid_status_webhook_confirms_and_delivers_order(monkeypatch):
     process_paid_order.assert_awaited_once_with(
         main.bot, store, main.reseller, main.settings, 123
     )
+
+
+def test_payment_proxy_redirects_to_fixed_khpay_checkout():
+    response = TestClient(main.app).get("/pay/txn-123", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://khpay.site/pay/txn-123"
+
+
+def test_payment_proxy_encodes_transaction_id_in_redirect_path():
+    response = TestClient(main.app).get("/pay/txn%3F123", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://khpay.site/pay/txn%3F123"

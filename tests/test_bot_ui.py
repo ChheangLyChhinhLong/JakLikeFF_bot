@@ -58,10 +58,10 @@ def test_guide_keyboard_links_to_the_configured_video_and_keeps_menu_navigation(
     assert len(guide_keyboard(None).inline_keyboard) == 1
 
 
-def test_payment_screen_uses_https_checkout_link_and_keeps_payment_check():
+def test_payment_screen_uses_render_proxy_and_keeps_payment_check():
     order = {"ff_uid": "123456", "total_likes": 1_000, "amount": "0.50"}
     caption = payment_caption(order, "txn-456")
-    markup = payment_keyboard(11, "https://khpay.site/pay/txn-456")
+    markup = payment_keyboard(11, "txn-456")
 
     assert caption == (
         "💳 <b>Pay $0.50</b>\n\n"
@@ -71,19 +71,22 @@ def test_payment_screen_uses_https_checkout_link_and_keeps_payment_check():
         "🟢 <b>Remaining to pay:</b> $0.50\n"
         "🏷 <b>Ref:</b> <code>txn-456</code>\n"
         "⏱ <b>Scan KHQR to complete payment.</b>\n"
-        "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
+        "⏰ <b>You have 4 minutes to pay. The QR refreshes itself.</b>"
     )
     assert len(markup.inline_keyboard) == 2
-    assert markup.inline_keyboard[0][0].url == "https://khpay.site/pay/txn-456"
+    assert markup.inline_keyboard[0][0].url == (
+        "https://jaklikeff-bot.onrender.com/pay/txn-456"
+    )
+    assert "khpay.site" not in markup.inline_keyboard[0][0].url
     assert markup.inline_keyboard[1][0].callback_data == "check:11"
 
 
-def test_payment_screen_omits_invalid_or_missing_checkout_url():
-    for payment_url in ("abamobilebank://pay", "http://khpay.site/pay/txn", None):
-        markup = payment_keyboard(11, payment_url)
+def test_payment_proxy_button_encodes_transaction_id():
+    markup = payment_keyboard(11, "txn/456")
 
-        assert len(markup.inline_keyboard) == 1
-        assert markup.inline_keyboard[0][0].callback_data == "check:11"
+    assert markup.inline_keyboard[0][0].url == (
+        "https://jaklikeff-bot.onrender.com/pay/txn%2F456"
+    )
 
 
 def test_progress_message_shows_partial_and_completed_order_states():

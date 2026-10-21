@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote
 
 import qrcode
 from aiogram import Bot, Dispatcher, F, Router
@@ -58,6 +58,7 @@ pending_price_packages: dict[int, int] = {}
 broadcast_jobs: set[asyncio.Task[None]] = set()
 DAILY_BATCH_FALLBACK = 220
 AUTOLIKE_TUTORIAL_VIDEO_SETTING = "autolike_tutorial_video_url"
+PAYMENT_PROXY_BASE_URL = "https://jaklikeff-bot.onrender.com/pay"
 
 
 def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
@@ -156,32 +157,23 @@ def payment_caption(order: dict[str, Any], transaction_id: str) -> str:
         f"🟢 <b>Remaining to pay:</b> ${amount:.2f}\n"
         f"🏷 <b>Ref:</b> <code>{html.escape(transaction_id)}</code>\n"
         "⏱ <b>Scan KHQR to complete payment.</b>\n"
-        "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
+        "⏰ <b>You have 4 minutes to pay. The QR refreshes itself.</b>"
     )
 
 
-def payment_keyboard(order_id: int, payment_url: str | None) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    if payment_url:
-        try:
-            parsed_url = urlsplit(payment_url)
-        except ValueError:
-            parsed_url = None
-        if parsed_url and parsed_url.scheme == "https" and parsed_url.netloc:
-            rows.append(
-                [InlineKeyboardButton(text="🌐 បើកទំព័រទូទាត់", url=payment_url)]
-            )
-        else:
-            logger.warning("KHPAY returned an invalid HTTPS payment URL")
-    rows.append(
+def payment_keyboard(order_id: int, transaction_id: str) -> InlineKeyboardMarkup:
+    payment_url = f"{PAYMENT_PROXY_BASE_URL}/{quote(transaction_id, safe='')}"
+    return keyboard(
         [
-            InlineKeyboardButton(
-                text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ",
-                callback_data=f"check:{order_id}",
-            )
+            [InlineKeyboardButton(text="🌐 បើកទំព័រទូទាត់", url=payment_url)],
+            [
+                InlineKeyboardButton(
+                    text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ",
+                    callback_data=f"check:{order_id}",
+                )
+            ],
         ]
     )
-    return keyboard(rows)
 
 
 def _make_qr(qr_string: str) -> BufferedInputFile:
@@ -631,16 +623,23 @@ def register_handlers(
             )
             transaction_id = str(payment["transaction_id"])
             await store.set_order_payment(int(order["id"]), transaction_id)
+            try:
+                await bot.delete_message(
+                    chat_id=callback.message.chat.id,
+                    message_id=callback.message.message_id,
+                )
+            except TelegramBadRequest:
+                logger.info("Package selection message was already unavailable")
+            except TelegramAPIError:
+                logger.exception(
+                    "Could not delete package selection message for order %s",
+                    order["id"],
+                )
             sent_message = await callback.message.answer_photo(
                 _make_qr(str(payment["qr_string"])),
                 caption=payment_caption(order, transaction_id),
                 parse_mode="HTML",
-                reply_markup=payment_keyboard(
-                    int(order["id"]),
-                    payment.get("payment_url")
-                    if isinstance(payment.get("payment_url"), str)
-                    else None,
-                ),
+                reply_markup=payment_keyboard(int(order["id"]), transaction_id),
             )
             status = await store.set_payment_message(int(order["id"]), sent_message.message_id)
             if status and status != "pending":
@@ -727,7 +726,7 @@ def register_handlers(
         await callback.message.answer(
             "🎥 <b>របៀបទិញ AutoLike</b>\n"
             "1. ចុចប៊ូតុងទិញ ហើយបញ្ចូល UID Free Fire។\n"
-            "2. ជ្រើសរើសចំនួន Likes និងស្កេន KHQR ក្នុងរយៈពេល 15 នាទី។\n"
+            "2. ជ្រើសរើសចំនួន Likes និងស្កេន KHQR ក្នុងរយៈពេល 4 នាទី។\n"
             "3. ប្រព័ន្ធនឹងបញ្ចូលរហូតដល់ 220 Likes ក្នុងមួយថ្ងៃ."
             f"{video_message}",
             parse_mode="HTML",

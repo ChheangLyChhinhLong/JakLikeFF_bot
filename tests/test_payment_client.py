@@ -6,6 +6,17 @@ import httpx
 from app.payments import KHPayClient, aba_mobile_deeplink
 
 
+def test_khpay_client_uses_the_configured_bearer_token():
+    async def run_test():
+        client = KHPayClient("known-api-key", "https://khpay.site/api/v1")
+        try:
+            assert client._client.headers["Authorization"] == "Bearer known-api-key"
+        finally:
+            await client.close()
+
+    asyncio.run(run_test())
+
+
 def test_qr_payment_uses_qr_endpoint():
     async def run_test():
         client = KHPayClient("api-key", "https://khpay.site/api/v1")

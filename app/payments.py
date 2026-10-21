@@ -28,6 +28,7 @@ class KHPayClient:
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             timeout=20.0,
         )
+        self._client.headers["Authorization"] = f"Bearer {api_key}"
 
     async def create_payment(
         self,

@@ -3,12 +3,13 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import uvicorn
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramAPIError
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from supabase import acreate_client
 
 from app.bot import delete_payment_qr, process_paid_order, reconcile_payments, register_handlers
@@ -76,6 +77,12 @@ app = FastAPI(lifespan=lifespan)
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/pay/{transaction_id}")
+async def payment_proxy(transaction_id: str) -> RedirectResponse:
+    target_url = f"https://khpay.site/pay/{quote(transaction_id, safe='')}"
+    return RedirectResponse(url=target_url, status_code=307)
 
 
 @app.post("/webhook/khpay")
