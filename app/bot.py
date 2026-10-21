@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlsplit
 
 import qrcode
 from aiogram import Bot, Dispatcher, F, Router
@@ -19,7 +20,7 @@ from aiogram.types import (
 )
 
 from app.config import Settings
-from app.payments import KHPayClient, aba_mobile_deeplink
+from app.payments import KHPayClient
 from app.reseller import AutoLikeClient
 from app.store import Store
 
@@ -159,23 +160,28 @@ def payment_caption(order: dict[str, Any], transaction_id: str) -> str:
     )
 
 
-def payment_keyboard(order_id: int, qr_string: str) -> InlineKeyboardMarkup:
-    return keyboard(
+def payment_keyboard(order_id: int, payment_url: str | None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if payment_url:
+        try:
+            parsed_url = urlsplit(payment_url)
+        except ValueError:
+            parsed_url = None
+        if parsed_url and parsed_url.scheme == "https" and parsed_url.netloc:
+            rows.append(
+                [InlineKeyboardButton(text="🌐 បើកទំព័រទូទាត់", url=payment_url)]
+            )
+        else:
+            logger.warning("KHPAY returned an invalid HTTPS payment URL")
+    rows.append(
         [
-            [
-                InlineKeyboardButton(
-                    text="🏦 បើកក្នុង ABA Mobile",
-                    url=aba_mobile_deeplink(qr_string),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ",
-                    callback_data=f"check:{order_id}",
-                )
-            ],
+            InlineKeyboardButton(
+                text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ",
+                callback_data=f"check:{order_id}",
+            )
         ]
     )
+    return keyboard(rows)
 
 
 def _make_qr(qr_string: str) -> BufferedInputFile:
@@ -629,7 +635,12 @@ def register_handlers(
                 _make_qr(str(payment["qr_string"])),
                 caption=payment_caption(order, transaction_id),
                 parse_mode="HTML",
-                reply_markup=payment_keyboard(int(order["id"]), str(payment["qr_string"])),
+                reply_markup=payment_keyboard(
+                    int(order["id"]),
+                    payment.get("payment_url")
+                    if isinstance(payment.get("payment_url"), str)
+                    else None,
+                ),
             )
             status = await store.set_payment_message(int(order["id"]), sent_message.message_id)
             if status and status != "pending":

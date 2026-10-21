@@ -16,7 +16,6 @@ from app.bot import (
     process_daily_delivery,
     welcome_text,
 )
-from app.payments import aba_mobile_deeplink
 
 
 def test_fixed_packages_match_the_published_price_tier():
@@ -59,10 +58,10 @@ def test_guide_keyboard_links_to_the_configured_video_and_keeps_menu_navigation(
     assert len(guide_keyboard(None).inline_keyboard) == 1
 
 
-def test_payment_screen_has_the_exact_two_inline_actions():
+def test_payment_screen_uses_https_checkout_link_and_keeps_payment_check():
     order = {"ff_uid": "123456", "total_likes": 1_000, "amount": "0.50"}
     caption = payment_caption(order, "txn-456")
-    markup = payment_keyboard(11, "KHQR+payload/123=")
+    markup = payment_keyboard(11, "https://khpay.site/pay/txn-456")
 
     assert caption == (
         "💳 <b>Pay $0.50</b>\n\n"
@@ -75,8 +74,16 @@ def test_payment_screen_has_the_exact_two_inline_actions():
         "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
     )
     assert len(markup.inline_keyboard) == 2
-    assert markup.inline_keyboard[0][0].url == aba_mobile_deeplink("KHQR+payload/123=")
+    assert markup.inline_keyboard[0][0].url == "https://khpay.site/pay/txn-456"
     assert markup.inline_keyboard[1][0].callback_data == "check:11"
+
+
+def test_payment_screen_omits_invalid_or_missing_checkout_url():
+    for payment_url in ("abamobilebank://pay", "http://khpay.site/pay/txn", None):
+        markup = payment_keyboard(11, payment_url)
+
+        assert len(markup.inline_keyboard) == 1
+        assert markup.inline_keyboard[0][0].callback_data == "check:11"
 
 
 def test_progress_message_shows_partial_and_completed_order_states():
