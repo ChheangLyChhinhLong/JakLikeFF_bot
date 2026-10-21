@@ -15,7 +15,7 @@ from app.bot import (
     payment_caption,
     payment_keyboard,
     process_paid_order,
-    process_daily_delivery,
+    process_order_delivery,
     welcome_text,
 )
 
@@ -156,7 +156,7 @@ def test_paid_order_deletes_qr_before_activation_and_delivery_notifications():
         }
         active_order = {**pending_order, "status": "active"}
         store = SimpleNamespace(
-            order=AsyncMock(side_effect=[pending_order, active_order]),
+            order=AsyncMock(side_effect=[pending_order, active_order, active_order]),
             clear_payment_message=AsyncMock(side_effect=lambda _: events.append("clear")),
             activate_order=AsyncMock(side_effect=lambda _: events.append("activate") or True),
             claim_due_order=AsyncMock(return_value=None),
@@ -206,7 +206,7 @@ def test_progress_bar_uses_ten_blocks_and_clamps_values():
     assert _progress_bar(1_100, 1_000) == "[██████████] 1,000/1,000 (100%)"
 
 
-def test_daily_delivery_uses_one_atomic_claim_and_notifies_customer_and_group():
+def test_delivery_sends_full_package_once_and_notifies_customer_and_group():
     async def run_test():
         order = {
             "id": 9,
@@ -220,16 +220,15 @@ def test_daily_delivery_uses_one_atomic_claim_and_notifies_customer_and_group():
             record_delivery=AsyncMock(
                 return_value={"sent_likes": 220, "status": "active"}
             ),
-            release_delivery_claim=AsyncMock(),
         )
         reseller = SimpleNamespace(deliver=AsyncMock(return_value=220))
         bot = SimpleNamespace(send_message=AsyncMock())
         settings = SimpleNamespace(admin_chat_id=-100123, telegram_admin_ids="")
 
-        delivered = await process_daily_delivery(bot, store, reseller, settings, 9)
+        delivered = await process_order_delivery(bot, store, reseller, settings, 9)
 
         assert delivered
-        reseller.deliver.assert_awaited_once_with("123456", 220)
+        reseller.deliver.assert_awaited_once_with("123456", 1_000)
         store.record_delivery.assert_awaited_once_with(9, 220)
         assert [call.args[0] for call in bot.send_message.await_args_list] == [123, -100123]
         assert all(call.kwargs["parse_mode"] == "HTML" for call in bot.send_message.await_args_list)
@@ -237,28 +236,30 @@ def test_daily_delivery_uses_one_atomic_claim_and_notifies_customer_and_group():
     asyncio.run(run_test())
 
 
-def test_daily_delivery_releases_claim_if_reseller_request_fails():
+def test_failed_delivery_is_not_released_for_automatic_retry():
     async def run_test():
         store = SimpleNamespace(
             claim_due_order=AsyncMock(
                 return_value={
                     "id": 9,
+                    "telegram_id": 123,
                     "ff_uid": "123456",
                     "total_likes": 500,
                     "sent_likes": 0,
                 }
             ),
-            release_delivery_claim=AsyncMock(),
+            fail_delivery=AsyncMock(),
             record_delivery=AsyncMock(),
         )
         reseller = SimpleNamespace(deliver=AsyncMock(side_effect=RuntimeError("offline")))
+        bot = SimpleNamespace(send_message=AsyncMock())
 
         try:
-            await process_daily_delivery(
-                SimpleNamespace(),
+            await process_order_delivery(
+                bot,
                 store,
                 reseller,
-                SimpleNamespace(admin_chat_id=None, telegram_admin_ids=""),
+                SimpleNamespace(admin_chat_id=-100123),
                 9,
             )
         except RuntimeError as exc:
@@ -266,8 +267,38 @@ def test_daily_delivery_releases_claim_if_reseller_request_fails():
         else:
             raise AssertionError("Expected the reseller error to propagate")
 
-        store.release_delivery_claim.assert_awaited_once_with(9)
+        store.fail_delivery.assert_awaited_once_with(9)
         store.record_delivery.assert_not_awaited()
+        assert [call.args[0] for call in bot.send_message.await_args_list] == [123, -100123]
+
+    asyncio.run(run_test())
+
+
+def test_paid_order_with_delivery_progress_does_not_call_reseller_again():
+    async def run_test():
+        order = {
+            "id": 14,
+            "telegram_id": 123,
+            "ff_uid": "123456",
+            "total_likes": 1_000,
+            "sent_likes": 220,
+            "status": "active",
+        }
+        store = SimpleNamespace(
+            order=AsyncMock(return_value=order),
+            clear_payment_message=AsyncMock(),
+        )
+        reseller = SimpleNamespace(deliver=AsyncMock())
+
+        await process_paid_order(
+            SimpleNamespace(),
+            store,
+            reseller,
+            SimpleNamespace(admin_chat_id=-100123),
+            14,
+        )
+
+        reseller.deliver.assert_not_awaited()
 
     asyncio.run(run_test())
 

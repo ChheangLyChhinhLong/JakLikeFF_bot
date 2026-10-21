@@ -31,8 +31,6 @@ services:
         value: "8916235907"
       - key: RESELLER_API_KEY
         sync: false
-      - key: RESELLER_DAILY_BATCH_LIKES
-        value: "220"
       - key: PORT
         value: "10000"
       - key: SUPPORT_USERNAME

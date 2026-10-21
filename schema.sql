@@ -100,12 +100,10 @@ begin
         select current_order.id
         from public.orders as current_order
         where current_order.status = 'active'
+          and current_order.sent_likes = 0
           and current_order.sent_likes < current_order.total_likes
           and current_order.last_run_date is distinct from current_date
-          and (
-              current_order.delivery_claimed_at is null
-              or current_order.delivery_claimed_at < now() - interval '10 minutes'
-          )
+          and current_order.delivery_claimed_at is null
           and (p_order_id is null or current_order.id = p_order_id)
           and not exists (
               select 1

@@ -1,6 +1,6 @@
 # Free Fire AutoLike Bot
 
-This Telegram bot sells Free Fire Like packages with admin-editable prices, creates KHPAY KHQR payments, and submits daily delivery batches to AutoLikeFF, whose service enforces its own per-day limit. All Telegram interaction uses inline buttons and text input; the bot does not register slash commands.
+This Telegram bot sells Free Fire Like packages with admin-editable prices, creates KHPAY KHQR payments, and submits each paid package once to AutoLikeFF, whose service handles automatic delivery. All Telegram interaction uses inline buttons and text input; the bot does not register slash commands.
 
 ## Setup
 
@@ -10,15 +10,15 @@ This Telegram bot sells Free Fire Like packages with admin-editable prices, crea
 4. Install dependencies with `pip install -r requirements.txt`.
 5. Start the service with `python -m app.main`.
 
-The service runs Telegram long polling, payment reconciliation, and a daily delivery worker. The first delivery is sent after payment confirmation; subsequent deliveries run at most once per day until the purchased package is complete. `RESELLER_DAILY_BATCH_LIKES` controls the requested batch size (default `220`); AutoLikeFF remains authoritative for its own daily system limit and returns the delivered count used for progress tracking. The configured reseller endpoint is upgraded to HTTPS for `mean-like.com` so the bearer key is not sent over cleartext HTTP. Configure a persistent process with one running bot instance. Database claims reduce duplicate daily deliveries when workers overlap.
+The service runs Telegram long polling and payment reconciliation. After payment is confirmed, the bot makes one AutoLikeFF request for the full purchased package; AutoLikeFF handles the remaining delivery automatically. A claimed request is never retried automatically after failure because the outcome may be ambiguous, and the customer/admin are notified to review it. Paid orders for the same UID are queued FIFO and submitted once when eligible. The configured reseller endpoint is upgraded to HTTPS for `mean-like.com` so the bearer key is not sent over cleartext HTTP. Configure a persistent process with one running bot instance.
 
 ## Operations
 
 - Package options and USD prices are seeded in `package_prices`; admins can edit active prices from the inline Admin Panel.
 - The “របៀបទិញ” guide reads `autolike_tutorial_video_url` from `bot_settings`. For an existing Supabase project, run [`migrations/20261021_add_autolike_tutorial_video.sql`](./migrations/20261021_add_autolike_tutorial_video.sql) once to set the supplied tutorial video link.
 - Admins can broadcast text, photos, or videos to active users and view aggregate user/order/revenue statistics.
-- `ADMIN_GROUP_ID` receives progress reports for each daily delivery batch, including the visual progress bar.
-- Paid orders for the same Free Fire UID are delivered FIFO. The next order waits until the earlier order completes, and only one order per UID is delivered per day. Existing Supabase projects must run [`migrations/20261021_queue_same_uid_orders.sql`](./migrations/20261021_queue_same_uid_orders.sql) to install this queue behavior.
+- `ADMIN_GROUP_ID` receives customer/admin progress reports for each AutoLikeFF response, including the visual progress bar.
+- Existing Supabase projects must run [`migrations/20261021_queue_same_uid_orders.sql`](./migrations/20261021_queue_same_uid_orders.sql), then [`migrations/20261021_single_reseller_request.sql`](./migrations/20261021_single_reseller_request.sql) to preserve the same-UID FIFO queue and prevent request retries.
 - Customers can see the same progress bar and their delivery history from the inline menu.
 - All bot interaction is through inline buttons and message/state handlers; no slash commands are registered.
 - Keep the Supabase service-role key private. Do not expose it to clients.

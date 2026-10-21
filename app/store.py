@@ -235,3 +235,17 @@ class Store:
 
     async def release_delivery_claim(self, order_id: int) -> None:
         await self.client.rpc("release_delivery_claim", {"p_order_id": order_id}).execute()
+
+    async def fail_delivery(self, order_id: int) -> None:
+        result = await (
+            self.client.table("orders")
+            .update({"status": "failed", "delivery_claimed_at": None})
+            .eq("id", order_id)
+            .eq("status", "active")
+            .not_.is_("delivery_claimed_at", "null")
+            .select("id")
+            .maybe_single()
+            .execute()
+        )
+        if _record(result.data) is None:
+            raise RuntimeError(f"Could not mark one-time delivery attempt failed for order {order_id}")

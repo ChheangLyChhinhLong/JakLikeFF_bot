@@ -56,7 +56,6 @@ pending_uids: dict[int, str] = {}
 admin_state: dict[int, str] = {}
 pending_price_packages: dict[int, int] = {}
 broadcast_jobs: set[asyncio.Task[None]] = set()
-DAILY_BATCH_FALLBACK = 220
 AUTOLIKE_TUTORIAL_VIDEO_SETTING = "autolike_tutorial_video_url"
 PAYMENT_PROXY_BASE_URL = "https://jaklikeff-bot.onrender.com/pay"
 
@@ -298,7 +297,7 @@ def _progress_text(order: dict[str, Any], delivered_today: int, sent_likes: int,
         + (
             "<i>ការបញ្ជាទិញរបស់អ្នកបានបញ្ចប់ហើយ។ សូមអរគុណ!</i>"
             if complete
-            else "<i>ប្រព័ន្ធនឹងបន្តបញ្ចូល ២២០ មេដៃនៅថ្ងៃស្អែកទៀត!</i>"
+            else "<i>AutoLikeFF នឹងបន្តដំណើរការការបញ្ជាទិញនេះដោយស្វ័យប្រវត្តិ។</i>"
         )
     )
 
@@ -327,7 +326,7 @@ async def _notify_delivery(
         logger.error("Delivery progress for order %s was not logged: ADMIN_GROUP_ID is not configured", order["id"])
 
 
-async def process_daily_delivery(
+async def process_order_delivery(
     bot: Bot,
     store: Store,
     reseller: AutoLikeClient,
@@ -339,15 +338,13 @@ async def process_daily_delivery(
         return False
     claimed_order_id = int(order["id"])
     try:
-        remaining = int(order["total_likes"]) - int(order["sent_likes"])
-        batch_size = int(getattr(settings, "reseller_daily_batch_likes", DAILY_BATCH_FALLBACK))
-        if batch_size < 1:
-            raise ValueError("RESELLER_DAILY_BATCH_LIKES must be positive")
-        requested = min(batch_size, remaining)
+        requested = int(order["total_likes"]) - int(order["sent_likes"])
         delivered = await reseller.deliver(str(order["ff_uid"]), requested)
         updated = await store.record_delivery(claimed_order_id, delivered)
     except Exception:
-        await store.release_delivery_claim(claimed_order_id)
+        logger.exception("One-time AutoLikeFF request failed for order %s", claimed_order_id)
+        await store.fail_delivery(claimed_order_id)
+        await _notify_delivery_failure(bot, settings, order)
         raise
     await _notify_delivery(bot, settings, order, delivered, updated)
     return True
@@ -367,10 +364,45 @@ async def process_paid_order(
     if order["status"] == "pending":
         await store.activate_order(order_id)
         order = await store.order(order_id)
-    if order and order["status"] == "active":
-        delivered = await process_daily_delivery(bot, store, reseller, settings, order_id)
-        if not delivered and int(order["sent_likes"]) == 0:
+    if (
+        order
+        and order["status"] == "active"
+        and int(order.get("sent_likes", 0)) == 0
+    ):
+        delivered = await process_order_delivery(bot, store, reseller, settings, order_id)
+        if not delivered and int(order.get("sent_likes", 0)) == 0:
+            order = await store.order(order_id)
+        if (
+            not delivered
+            and order
+            and order["status"] == "active"
+            and int(order.get("sent_likes", 0)) == 0
+        ):
             await _notify_queued_order(bot, settings, order)
+
+
+async def _notify_delivery_failure(
+    bot: Bot,
+    settings: Settings,
+    order: dict[str, Any],
+) -> None:
+    text = (
+        "❌ <b>មិនអាចផ្ញើការបញ្ជាទិញទៅ AutoLikeFF បានទេ។</b>\n"
+        f"🧾 Order: <code>#{int(order['id'])}</code>\n"
+        "សូមទាក់ទងជំនួយ ដើម្បីពិនិត្យស្ថានភាព។ ប្រព័ន្ធនឹងមិនផ្ញើ request ស្ទួនដោយស្វ័យប្រវត្តិទេ។"
+    )
+    recipients = [int(order["telegram_id"])]
+    if settings.admin_chat_id is not None and settings.admin_chat_id not in recipients:
+        recipients.append(settings.admin_chat_id)
+    for chat_id in recipients:
+        try:
+            await bot.send_message(chat_id, text, parse_mode="HTML")
+        except TelegramAPIError:
+            logger.exception(
+                "Could not send failed delivery notification for order %s to chat %s",
+                order["id"],
+                chat_id,
+            )
 
 
 async def _notify_queued_order(
@@ -442,10 +474,10 @@ async def reconcile_payments(
                         await _expire_order(bot, store, order)
                 except Exception:
                     logger.exception("Payment reconciliation failed for order %s", order["id"])
-            while await process_daily_delivery(bot, store, reseller, settings):
+            while await process_order_delivery(bot, store, reseller, settings):
                 pass
         except Exception:
-            logger.exception("Payment and daily delivery reconciliation failed")
+            logger.exception("Payment reconciliation failed")
         await asyncio.sleep(max(5, settings.poll_interval_seconds))
 
 

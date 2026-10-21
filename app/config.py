@@ -1,6 +1,5 @@
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +18,6 @@ class Settings(BaseSettings):
     reseller_api_url: str = "https://mean-like.com/autolikeff"
     reseller_seller_id: str = "8916235907"
     reseller_api_key: str = ""
-    reseller_daily_batch_likes: int = Field(default=220, gt=0)
     support_username: str = ""
     poll_interval_seconds: int = 20
     port: int = 10000
